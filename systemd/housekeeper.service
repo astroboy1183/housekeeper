@@ -1,0 +1,16 @@
+[Unit]
+Description=Nightly laptop health check to Telegram
+After=network-online.target
+Wants=network-online.target
+# Boot-time catch-up runs (Persistent=true) can fire before Wi-Fi is up and
+# die on the first network call. Retry every 2 min, at most 5 tries per 30
+# min, then give up until the next scheduled run.
+StartLimitIntervalSec=1800
+StartLimitBurst=5
+
+[Service]
+Type=oneshot
+Restart=on-failure
+RestartSec=120
+WorkingDirectory=/home/jayanth/agents/housekeeper
+ExecStart=/home/jayanth/agents/housekeeper/.venv/bin/python /home/jayanth/agents/housekeeper/housekeeper.py

@@ -1,0 +1,12 @@
+[Unit]
+Description=Run laptop health check nightly at 21:30 IST
+
+[Timer]
+OnCalendar=*-*-* 21:30:00
+# Persistent=true: if 21:30 was missed (machine asleep/off), run once at
+# next wake/boot. Won't wake a suspended machine (no WakeSystem).
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
