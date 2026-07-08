@@ -51,6 +51,8 @@ message from this bot means *act now* (or a ✅ all-clear).
 - **`agentlib`** is imported from `~/agents/common/` via `sys.path` —
   local agents share one copy instead of vendoring.
 
+- Tests run in CI on every push (`.github/workflows/tests.yml`).
+
 ## Ops (systemd, not GitHub Actions)
 
 - Units: `~/.config/systemd/user/housekeeper.{service,timer}` — live

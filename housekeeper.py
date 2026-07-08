@@ -133,11 +133,12 @@ def gather_context(info):
         info.append("reboot required (kernel/libc updated)")
 
 
-def check_battery(info):
+def check_battery(info, base=Path("/sys/class/power_supply")):
     """Note battery wear once it's meaningful (<80% of design capacity).
 
-    Healthy batteries stay silent — a daily 'battery fine' line is noise."""
-    for bat in Path("/sys/class/power_supply").glob("BAT*"):
+    Healthy batteries stay silent — a daily 'battery fine' line is noise.
+    `base` is parameterized purely for tests (a tmpdir fake sysfs)."""
+    for bat in base.glob("BAT*"):
         for prefix in ("energy", "charge"):  # driver exposes one or the other
             try:
                 full = int((bat / f"{prefix}_full").read_text())
