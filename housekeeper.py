@@ -82,19 +82,13 @@ REQUIRED_TIMERS = ("housekeeper.timer",)
 # only fire when a run starts and dies — a run that never starts alerts
 # nobody except this check. (repo, workflow file, label); weeklies carry
 # the weekday they fire (0=Mon) and are checked the morning after.
+# Fleet paused for credit-saving (Jul 2026): only mail + finance run.
+# When re-enabling agents, restore their entries here (see git history).
 CLOUD_AGENTS = [
-    ("astroboy1183/weather-report", "weather-report.yml", "weather"),
     ("astroboy1183/mail-digest", "mail-digest.yml", "mail"),
-    ("astroboy1183/news-briefing", "news-briefing.yml", "news"),
-    ("astroboy1183/cricket-scores", "cricket-scores.yml", "cricket"),
-    ("astroboy1183/tech-news", "tech-news.yml", "tech"),
     ("astroboy1183/finance-tracker", "finance-tracker.yml", "finance"),
-    ("astroboy1183/eng-blogs", "eng-blogs.yml", "eng-blogs"),
-    ("astroboy1183/repo-review", "repo-review.yml", "repo-review"),
 ]
-WEEKLY_AGENTS = [
-    ("astroboy1183/papers-digest", "papers-digest.yml", "papers", 5),  # Sat
-]
+WEEKLY_AGENTS = []
 
 # Local memory — deliberately NOT committed anywhere: this agent runs on
 # the laptop and its history belongs to the laptop (see .gitignore).
