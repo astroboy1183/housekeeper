@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Mint housekeeper.
 
-Nightly (21:30 IST, systemd user timer) health check of this laptop:
+Daily (06:00 IST, systemd user timer) health check of this laptop:
   - disk usage on real filesystems (alert at >=85%)
   - failed systemd units, system and user (any = alert)
   - Obsidian vault git drift: uncommitted changes with no snapshot for

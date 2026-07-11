@@ -1,6 +1,6 @@
 # housekeeper
 
-Nightly laptop health check → Telegram, 21:30 IST via a systemd **user
+Daily laptop health check → Telegram, 06:00 IST via a systemd **user
 timer**. A local agent: the code lives in this repo (cloned into the
 fleet Codespace for editing/backup), but it *runs* only on the laptop it
 checks. One agent, one task, one bot: `@jayanth_laptop_alerts_bot` — a
@@ -57,7 +57,7 @@ message from this bot means *act now* (or a ✅ all-clear).
 
 - Units: `~/.config/systemd/user/housekeeper.{service,timer}` — live
   copies; `systemd/` in this repo holds reference copies —
-  21:30 IST, `Persistent=true` (missed runs fire on next boot/wake),
+  06:00 IST, `Persistent=true` (missed runs fire on next boot/wake),
   `Restart=on-failure` every 2 min, max 5 tries per 30 min (network
   races at boot).
 - Logs: `journalctl --user -u housekeeper.service -e`
