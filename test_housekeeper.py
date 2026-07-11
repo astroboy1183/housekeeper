@@ -112,5 +112,151 @@ class BatteryTest(unittest.TestCase):
         self.assertTrue(any("60% of design" in i for i in info))
 
 
+
+
+class MemoryLoadTest(unittest.TestCase):
+
+    def _proc(self, tmp, avail_kb, total_kb=16000000, load="0.5"):
+        meminfo = Path(tmp) / "meminfo"
+        meminfo.write_text(
+            f"MemTotal: {total_kb} kB\nMemAvailable: {avail_kb} kB\n"
+            "SwapTotal: 2000000 kB\nSwapFree: 500000 kB\n")
+        loadavg = Path(tmp) / "loadavg"
+        loadavg.write_text(f"{load} 0.4 0.3 1/500 999\n")
+        return str(meminfo), str(loadavg)
+
+    def test_pressure_alerts_swap_noted(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            meminfo, loadavg = self._proc(tmp, avail_kb=800000)  # 5%
+            issues, info = [], []
+            saved = hk.sh
+            hk.sh = lambda cmd: "chrome 4000000\nfirefox 2000000"
+            try:
+                hk.check_memory_load(issues, info, meminfo, loadavg)
+            finally:
+                hk.sh = saved
+        self.assertTrue(any("memory pressure" in i for i in issues))
+        self.assertTrue(any("swap 75% used" in i for i in info))
+
+    def test_healthy_memory_quiet(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            meminfo, loadavg = self._proc(tmp, avail_kb=8000000)  # 50%
+            issues, info = [], []
+            hk.check_memory_load(issues, info, meminfo, loadavg)
+        self.assertEqual(issues, [])
+
+
+class TempsTest(unittest.TestCase):
+
+    def _zone(self, tmp, milli):
+        z = Path(tmp) / "thermal_zone0"
+        z.mkdir()
+        (z / "temp").write_text(str(milli))
+
+    def test_hot_alerts_warm_notes_cool_silent(self):
+        import tempfile
+        for milli, in_issues, in_info in ((90000, True, False),
+                                          (75000, False, True),
+                                          (50000, False, False)):
+            with tempfile.TemporaryDirectory() as tmp:
+                self._zone(tmp, milli)
+                issues, info = [], []
+                hk.check_temps(issues, info, base=Path(tmp))
+            self.assertEqual(bool(issues), in_issues, milli)
+            self.assertEqual(bool(info), in_info, milli)
+
+
+class KernelErrorsAndTimersTest(unittest.TestCase):
+
+    def test_storage_errors_alert(self):
+        saved = hk.sh
+        hk.sh = lambda cmd: "3"
+        try:
+            issues = []
+            hk.check_kernel_errors(issues)
+        finally:
+            hk.sh = saved
+        self.assertTrue(any("storage error" in i for i in issues))
+
+    def test_clean_kernel_log_silent(self):
+        saved = hk.sh
+        hk.sh = lambda cmd: "0"
+        try:
+            issues = []
+            hk.check_kernel_errors(issues)
+        finally:
+            hk.sh = saved
+        self.assertEqual(issues, [])
+
+    def test_missing_timer_alerts(self):
+        saved = hk.sh
+        hk.sh = lambda cmd: "housekeeper.timer   Mon ..."  # daily-review absent
+        try:
+            issues = []
+            hk.check_local_timers(issues)
+        finally:
+            hk.sh = saved
+        self.assertEqual(len(issues), 1)
+        self.assertIn("daily-review.timer", issues[0])
+
+
+class CleanupTest(unittest.TestCase):
+
+    def test_ledger_itemizes_only_big_things(self):
+        def fake_sh(cmd):
+            if cmd.startswith("du") and ".cache" in cmd:
+                return f"{7 * 2**30} /home/x/.cache"     # 7G → itemized
+            if cmd.startswith("du"):
+                return f"{100 * 2**20} /home/x/Trash"    # 0.1G → quiet
+            if "disk-usage" in cmd:
+                return "Archived and active journals take up 3.5G in the file system."
+            if "autoremove" in cmd:
+                return "4"
+            return ""
+        saved = hk.sh
+        hk.sh = fake_sh
+        try:
+            info = []
+            hk.check_cleanup(info)
+        finally:
+            hk.sh = saved
+        self.assertEqual(len(info), 1)
+        line = info[0]
+        self.assertIn("~/.cache 7.0G", line)
+        self.assertIn("journald 3.5G", line)
+        self.assertIn("4 packages autoremovable", line)
+        self.assertNotIn("trash", line)
+
+
+class TrendsTest(unittest.TestCase):
+
+    def test_disk_growth_noted(self):
+        history = {"2026-07-01": {"disk": 60}}
+        issues, info = [], []
+        hk.apply_trends(issues, info, history, 67, False, today="2026-07-11")
+        self.assertTrue(any("grew 7%" in i for i in info))
+        self.assertEqual(history["2026-07-11"], {"disk": 67})
+
+    def test_fresh_reboot_flag_is_note_old_is_alert(self):
+        history = {}
+        issues, info = [], []
+        hk.apply_trends(issues, info, history, 50, True, today="2026-07-11")
+        self.assertTrue(any("reboot required" in i for i in info))
+        self.assertEqual(issues, [])
+        self.assertEqual(history["reboot_since"], "2026-07-11")
+
+        history = {"reboot_since": "2026-07-01"}
+        issues, info = [], []
+        hk.apply_trends(issues, info, history, 50, True, today="2026-07-11")
+        self.assertTrue(any("ignored for 10 days" in i for i in issues))
+
+    def test_reboot_clears_when_flag_gone(self):
+        history = {"reboot_since": "2026-07-01"}
+        hk.apply_trends([], [], history, 50, False, today="2026-07-11")
+        self.assertNotIn("reboot_since", history)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

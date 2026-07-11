@@ -12,11 +12,25 @@ message from this bot means *act now* (or a ✅ all-clear).
 |---|---|---|
 | Disk usage (`/`, `/home`) | ≥ 85% used | free-space note |
 | Failed systemd units (system + user) | any (minus known-benign) | — |
+| The fleet's own local timers | housekeeper/daily-review not scheduled | — |
+| Memory pressure | < 10% available (with top hogs named) | swap-use note |
+| Load average | > 2× cores (something is stuck) | — |
+| CPU temperature | ≥ 85°C at rest | warm note ≥ 70°C |
+| Kernel storage errors this boot | any I/O / ATA / NVMe error lines | — |
 | Obsidian vault git drift | dirty ≥ 14 days, or unpushed commits | dirty note |
+| Repo drift (~/agents, ~/Desktop) | — | uncommitted/unpushed noted |
 | Pending security updates | ≥ 20 (badly behind) | count note |
+| 🧹 Cleanup ledger | — | ~/.cache / trash / journald / autoremove sizes, itemized past thresholds |
+| Reboot-required flag | **ignored ≥ 7 days** (tracked in history) | note when fresh |
+| 📈 Disk trend | — | note when +5% in a week |
 | Journal errors this boot | — | count note |
-| Reboot-required flag | — | note when present |
 | Battery wear | — | note when < 80% of design |
+
+**Local memory** (`state/history.json`, gitignored — the laptop's
+history stays on the laptop): daily disk%, and the first day
+reboot-required appeared, which is what lets ignoring it escalate. The
+kernel-error check is the root-free SMART substitute: a dying disk
+announces itself in the kernel log long before user-space notices.
 
 ## How the code works
 
