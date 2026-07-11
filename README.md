@@ -12,7 +12,9 @@ message from this bot means *act now* (or a ✅ all-clear).
 |---|---|---|
 | Disk usage (`/`, `/home`) | ≥ 85% used | free-space note |
 | Failed systemd units (system + user) | any (minus known-benign) | — |
-| The fleet's own local timers | housekeeper/daily-review not scheduled | — |
+| Housekeeper's own timer | not scheduled | — |
+| 🐕 Fleet watchdog | any cloud agent that did not RUN yesterday (never-started runs alert nobody else) | "all N ran ✓" note |
+| agentlib drift | any vendored copy differs from common/ | — |
 | Memory pressure | < 10% available (with top hogs named) | swap-use note |
 | Load average | > 2× cores (something is stuck) | — |
 | CPU temperature | ≥ 85°C at rest | warm note ≥ 70°C |

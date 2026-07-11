@@ -192,14 +192,97 @@ class KernelErrorsAndTimersTest(unittest.TestCase):
 
     def test_missing_timer_alerts(self):
         saved = hk.sh
-        hk.sh = lambda cmd: "housekeeper.timer   Mon ..."  # daily-review absent
+        hk.sh = lambda cmd: "someother.timer   Mon ..."  # housekeeper absent
         try:
             issues = []
             hk.check_local_timers(issues)
         finally:
             hk.sh = saved
         self.assertEqual(len(issues), 1)
-        self.assertIn("daily-review.timer", issues[0])
+        self.assertIn("housekeeper.timer", issues[0])
+
+
+class FleetWatchdogTest(unittest.TestCase):
+
+    from datetime import date as _date
+    MONDAY = _date(2026, 7, 6)   # yesterday = Sunday (weekday 6)
+    SUNDAY = _date(2026, 7, 12)  # yesterday = Saturday (weekday 5) → papers due
+
+    def _fleet(self, reply_by_repo, today):
+        def fake_sh(cmd):
+            for repo, reply in reply_by_repo.items():
+                if repo in cmd:
+                    return reply
+            return "[]"
+        saved = hk.sh
+        hk.sh = fake_sh
+        try:
+            issues, info = [], []
+            hk.check_fleet(issues, info, today=today)
+            return issues, info
+        finally:
+            hk.sh = saved
+
+    def test_all_ran_is_one_quiet_note(self):
+        ok = '[{"event": "workflow_dispatch", "conclusion": "success"}]'
+        issues, info = self._fleet(
+            {r: ok for r, _, _ in hk.CLOUD_AGENTS}, today=self.MONDAY)
+        self.assertEqual(issues, [])
+        self.assertTrue(any("ran yesterday ✓" in i for i in info))
+
+    def test_silent_agent_alerts(self):
+        ok = '[{"event": "schedule", "conclusion": "success"}]'
+        replies = {r: ok for r, _, _ in hk.CLOUD_AGENTS}
+        replies["astroboy1183/mail-digest"] = "[]"
+        issues, _ = self._fleet(replies, today=self.MONDAY)
+        self.assertEqual(len(issues), 1)
+        self.assertIn("mail DID NOT RUN", issues[0])
+
+    def test_fired_but_failed_alerts(self):
+        ok = '[{"event": "schedule", "conclusion": "success"}]'
+        replies = {r: ok for r, _, _ in hk.CLOUD_AGENTS}
+        replies["astroboy1183/tech-news"] = '[{"event": "schedule", "conclusion": "failure"}]'
+        issues, _ = self._fleet(replies, today=self.MONDAY)
+        self.assertIn("tech fired but never succeeded", issues[0])
+
+    def test_weekly_checked_only_morning_after(self):
+        ok = '[{"event": "schedule", "conclusion": "success"}]'
+        replies = {r: ok for r, _, _ in hk.CLOUD_AGENTS}
+        replies["astroboy1183/papers-digest"] = "[]"
+        issues, _ = self._fleet(replies, today=self.MONDAY)   # papers not due
+        self.assertEqual(issues, [])
+        issues, _ = self._fleet(replies, today=self.SUNDAY)   # Sat was yesterday
+        self.assertIn("papers DID NOT RUN", issues[0])
+
+    def test_offline_gh_is_one_note_not_alarm(self):
+        saved = hk.sh
+        hk.sh = lambda cmd: ""
+        try:
+            issues, info = [], []
+            hk.check_fleet(issues, info, today=self.MONDAY)
+        finally:
+            hk.sh = saved
+        self.assertEqual(issues, [])
+        self.assertTrue(any("gh unreachable" in i for i in info))
+
+
+class AgentlibDriftTest(unittest.TestCase):
+
+    def test_drift_alerts_sync_silent(self):
+        import tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            (base / "common").mkdir()
+            (base / "common" / "agentlib.py").write_text("REF")
+            (base / "good").mkdir()
+            (base / "good" / "agentlib.py").write_text("REF")
+            (base / "bad").mkdir()
+            (base / "bad" / "agentlib.py").write_text("DRIFTED")
+            issues = []
+            hk.check_agentlib_drift(issues, base=base)
+        self.assertEqual(len(issues), 1)
+        self.assertIn("bad", issues[0])
+        self.assertNotIn("good", issues[0])
 
 
 class CleanupTest(unittest.TestCase):

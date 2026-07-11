@@ -7,7 +7,10 @@ comprehensive but root-free; every check degrades gracefully:
   ALERTS (act today)
   - disk usage on real filesystems (>=85%)
   - failed systemd units, system and user (any = alert)
-  - the fleet's OWN local timers missing (housekeeper / daily-review)
+  - housekeeper's OWN timer missing from the schedule
+  - fleet watchdog: any cloud agent that did not RUN yesterday (a run
+    that never starts alerts nobody else — adopted from the retired
+    daily-review agent), and vendored agentlib drift from common/
   - memory pressure (<10% available) or runaway load (>2× cores)
   - CPU package temperature >=85°C
   - kernel storage errors this boot (I/O, ATA, NVMe — a failing disk
@@ -43,7 +46,7 @@ import shutil
 import subprocess
 import sys
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -72,7 +75,26 @@ JOURNAL_NOTE_GB = 2
 REBOOT_AGE_ALERT_DAYS = 7
 DISK_TREND_NOTE_PCT = 5   # grew this much in a week → worth a note
 REPO_ROOTS = [Path.home() / "agents", Path.home() / "Desktop"]
-REQUIRED_TIMERS = ("housekeeper.timer", "daily-review.timer")
+REQUIRED_TIMERS = ("housekeeper.timer",)
+
+# The fleet watchdog (adopted from the retired daily-review agent): every
+# cloud agent must have actually RUN yesterday. The per-run failure alerts
+# only fire when a run starts and dies — a run that never starts alerts
+# nobody except this check. (repo, workflow file, label); weeklies carry
+# the weekday they fire (0=Mon) and are checked the morning after.
+CLOUD_AGENTS = [
+    ("astroboy1183/weather-report", "weather-report.yml", "weather"),
+    ("astroboy1183/mail-digest", "mail-digest.yml", "mail"),
+    ("astroboy1183/news-briefing", "news-briefing.yml", "news"),
+    ("astroboy1183/cricket-scores", "cricket-scores.yml", "cricket"),
+    ("astroboy1183/tech-news", "tech-news.yml", "tech"),
+    ("astroboy1183/finance-tracker", "finance-tracker.yml", "finance"),
+    ("astroboy1183/eng-blogs", "eng-blogs.yml", "eng-blogs"),
+    ("astroboy1183/repo-review", "repo-review.yml", "repo-review"),
+]
+WEEKLY_AGENTS = [
+    ("astroboy1183/papers-digest", "papers-digest.yml", "papers", 5),  # Sat
+]
 
 # Local memory — deliberately NOT committed anywhere: this agent runs on
 # the laptop and its history belongs to the laptop (see .gitignore).
@@ -228,6 +250,74 @@ def check_kernel_errors(issues):
             f"{count} kernel storage error lines this boot — check the disk "
             "(journalctl -k -b | grep -iE 'i/o error|nvme')"
         )
+
+
+def check_fleet(issues, info, today=None):
+    """Did every cloud agent actually run YESTERDAY? Housekeeper fires at
+    06:00 — the same minute as the fleet — so today's runs are just
+    starting; yesterday is the completed day to judge.
+
+    Uses the laptop's authenticated `gh` CLI. If GitHub is unreachable
+    (pre-Wi-Fi boot run), one note is emitted and the check skips — a
+    watchdog that cries offline every airplane morning trains you to
+    ignore it."""
+    today = today or date.today()
+    yesterday = (today - timedelta(days=1)).isoformat()
+    due = list(CLOUD_AGENTS) + [
+        (repo, wf, label)
+        for repo, wf, label, weekday in WEEKLY_AGENTS
+        if (today - timedelta(days=1)).weekday() == weekday
+    ]
+    ran, problems = [], []
+    for i, (repo, wf, label) in enumerate(due):
+        raw = sh(
+            f"gh api -X GET repos/{repo}/actions/workflows/{wf}/runs "
+            f"-f 'created={yesterday}..{yesterday}' "
+            "--jq '[.workflow_runs[] | {event, conclusion}]'"
+        )
+        if not raw:
+            if i == 0:
+                info.append("fleet watchdog: gh unreachable — skipped")
+                return
+            problems.append(f"{label} (query failed)")
+            continue
+        try:
+            runs = json.loads(raw)
+        except ValueError:
+            problems.append(f"{label} (bad reply)")
+            continue
+        fired = [r for r in runs if r.get("event") in ("schedule", "workflow_dispatch")]
+        ok = [r for r in fired if r.get("conclusion") == "success"]
+        if ok:
+            ran.append(label)
+        elif fired:
+            problems.append(f"{label} fired but never succeeded")
+        else:
+            problems.append(f"{label} DID NOT RUN")
+    if problems:
+        issues.append(
+            f"fleet: {', '.join(problems)} yesterday — check gh run list"
+        )
+    elif ran:
+        info.append(f"fleet: all {len(ran)} cloud agents ran yesterday ✓")
+
+
+def check_agentlib_drift(issues, base=None):
+    """Vendored agentlib copies must stay byte-identical to common/ —
+    silent drift means one agent quietly runs different plumbing.
+    (Adopted from the retired daily-review agent.)"""
+    base = base or Path.home() / "agents"
+    try:
+        ref = (base / "common" / "agentlib.py").read_bytes()
+    except OSError:
+        return
+    drifted = sorted(
+        p.parent.name
+        for p in base.glob("*/agentlib.py")
+        if p.parent.name != "common" and p.read_bytes() != ref
+    )
+    if drifted:
+        issues.append(f"agentlib drift: {', '.join(drifted)} differ from common/")
 
 
 def check_vault(issues, info):
@@ -401,6 +491,8 @@ def main():
     pcts = check_disks(issues, info)
     check_failed_units(issues)
     check_local_timers(issues)
+    check_fleet(issues, info)
+    check_agentlib_drift(issues)
     check_memory_load(issues, info)
     check_temps(issues, info)
     check_kernel_errors(issues)
