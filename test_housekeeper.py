@@ -241,18 +241,28 @@ class FleetWatchdogTest(unittest.TestCase):
     def test_fired_but_failed_alerts(self):
         ok = '[{"event": "schedule", "conclusion": "success"}]'
         replies = {r: ok for r, _, _ in hk.CLOUD_AGENTS}
-        replies["astroboy1183/tech-news"] = '[{"event": "schedule", "conclusion": "failure"}]'
+        replies["astroboy1183/finance-tracker"] = '[{"event": "schedule", "conclusion": "failure"}]'
         issues, _ = self._fleet(replies, today=self.MONDAY)
-        self.assertIn("tech fired but never succeeded", issues[0])
+        self.assertIn("finance fired but never succeeded", issues[0])
 
     def test_weekly_checked_only_morning_after(self):
         ok = '[{"event": "schedule", "conclusion": "success"}]'
         replies = {r: ok for r, _, _ in hk.CLOUD_AGENTS}
-        replies["astroboy1183/papers-digest"] = "[]"
-        issues, _ = self._fleet(replies, today=self.MONDAY)   # papers not due
+        # WEEKLY_AGENTS is empty while the fleet is paused; verify the
+        # weekly gate stays quiet, and prove it works when populated.
+        issues, _ = self._fleet(replies, today=self.SUNDAY)
         self.assertEqual(issues, [])
-        issues, _ = self._fleet(replies, today=self.SUNDAY)   # Sat was yesterday
-        self.assertIn("papers DID NOT RUN", issues[0])
+        saved = hk.WEEKLY_AGENTS
+        hk.WEEKLY_AGENTS = [("astroboy1183/papers-digest",
+                             "papers-digest.yml", "papers", 5)]
+        try:
+            replies["astroboy1183/papers-digest"] = "[]"
+            issues, _ = self._fleet(replies, today=self.MONDAY)  # not due Mon
+            self.assertEqual(issues, [])
+            issues, _ = self._fleet(replies, today=self.SUNDAY)  # Sat was yesterday
+            self.assertIn("papers DID NOT RUN", issues[0])
+        finally:
+            hk.WEEKLY_AGENTS = saved
 
     def test_offline_gh_is_one_note_not_alarm(self):
         saved = hk.sh
